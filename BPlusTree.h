@@ -1,7 +1,7 @@
 #pragma once
 #include <vector>
 #include <string>
-#include <BPlusNode.h>
+#include "BPlusNode.h"
 
 using namespace std;
 
@@ -13,6 +13,7 @@ private:
 
 public:
     BPlusTree(int m); // constructor
+
     vector<streampos> search(string key);
 
     void insert(string key, streampos offset);
