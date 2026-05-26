@@ -23,4 +23,7 @@ public:
 
     // function to search for a key and return the list of file offsets where it appears
     vector<streampos> search(string key);
+
+    bool replaceOffset(string key, streampos oldOffset, streampos newOffset);
+    bool removeOffset(string key, streampos oldOffset);
 };
