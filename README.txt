@@ -15,22 +15,32 @@ TEMEL OZELLIKLER
 - Thread Safety (Is Parcacigi Guvenligi): Dosya okuma ve Vacuum (temizlik) islemlerinin cakismasini (Race Condition) onlemek amaciyla std::mutex ve std::atomic kilit mekanizmalari kullanilmistir.
 
 
-KURULUM VE DERLEME TALIMATLARI (LINUX / FEDORA)
------------------------------------------------
+KURULUM VE DERLEME TALIMATLARI
+------------------------------
 
-Proje std::thread ve std::mutex gibi modern C++11 coklu is parcacigi (multithreading) kutuphanelerini kullandigi icin derleme asamasinda POSIX thread (-pthread) bayraginin eklenmesi zorunludur.
+Proje std::thread ve std::mutex gibi modern C++11 coklu is parcacigi (multithreading) kutuphanelerini kullandigi icin derleme asamasinda bazi sistemlerde POSIX thread (-pthread) bayraginin eklenmesi gerekebilir.
 
 1. On Kosullar:
-Sisteminizde g++ (GCC) derleyicisinin kurulu oldugundan emin olun.
-Proje dizininde kaynak kodlarla birlikte veri setlerinizin (10KBooks_dataset.txt, 100KBooks_dataset.txt, 1MBooks_dataset.txt) bulundugundan emin olun.
+Sisteminizde bir C++ derleyicisi (GCC, Clang veya MSVC) kurulu olmalidir.
+Proje dizininde kaynak kodlarla birlikte veri setlerinizin (10KBooks_dataset.txt vb.) bulundugundan emin olun.
 
 2. Projeyi Derleme:
-Terminali proje dizininde acin ve tum kgit aynak kodlari derlemek icin asagidaki komutu calistirin:
-g++ main.cpp LibraryCRUD.cpp StringParser.cpp BPlusTree.cpp -o db_engine -pthread
+
+- Linux (Ubuntu, Debian, Fedora vb.) ve macOS Icin:
+  Terminali proje dizininde acin ve asagidaki komutu calistirin:
+  g++ main.cpp LibraryCRUD.cpp StringParser.cpp BPlusTree.cpp -o db_engine -pthread
+
+- Windows Icin (MinGW / GCC):
+  Komut satirini (CMD veya PowerShell) proje dizininde acin ve asagidaki komutu calistirin:
+  g++ main.cpp LibraryCRUD.cpp StringParser.cpp BPlusTree.cpp -o db_engine.exe
 
 3. Projeyi Calistirma:
-Derleme islemi basariyla tamamlandiktan sonra programi baslatmak icin:
-./db_engine
+
+- Linux ve macOS Icin:
+  ./db_engine
+
+- Windows Icin:
+  db_engine.exe
 
 
 KULLANIM REHBERI
