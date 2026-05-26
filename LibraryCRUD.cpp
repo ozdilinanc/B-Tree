@@ -41,6 +41,12 @@ bool LibraryCRUD::deleteBook(fstream &dbFile, const string &id)
 
 void LibraryCRUD::updateBook(fstream &dbFile, const string &oldId, const Book &newBook)
 {
+    vector<streampos> deletePosSet = idTree.search(oldId);
+    if (deletePosSet.empty())
+    {
+        printf("No record found.");
+        return;
+    }
     deleteBook(dbFile, oldId);
 
     dbFile.clear();

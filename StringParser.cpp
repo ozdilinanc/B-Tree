@@ -38,7 +38,10 @@ Book parseLine(const string &satir)
         {
             book.title += "," + parcalar[i];
         }
-        book.isValid = true;
+        if (book.id[0] == '*')
+            book.isValid = false;
+        else
+            book.isValid = true;
     }
     return book;
 }

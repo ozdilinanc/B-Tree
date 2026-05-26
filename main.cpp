@@ -45,7 +45,8 @@ int main()
         streampos currentOffset = file.tellg();
         if (!getline(file, satir))
             break;
-
+        if (satir[0] == '*')
+            continue;
         Book parsedBook = parseLine(satir);
         if (parsedBook.isValid)
         {
