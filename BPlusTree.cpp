@@ -169,3 +169,59 @@ vector<streampos> BPlusTree::search(string key)
     // if we did not find the key in the leaf node, it means the key does not exist in the tree, so we return an empty vector to indicate that the key was not found
     return {};
 }
+
+// Doğrudan Adres Güncelleme (In-Place Pointer Update)
+bool BPlusTree::replaceOffset(string key, streampos oldOffset, streampos newOffset)
+{
+    BPlusNode *current = root;
+    while (!current->isLeafNode)
+    {
+        int i = 0;
+        while (i < current->keys.size() && key >= current->keys[i])
+            i++;
+        current = current->children[i];
+    }
+    for (int i = 0; i < current->keys.size(); i++)
+    {
+        if (current->keys[i] == key)
+        {
+            for (int j = 0; j < current->dataOffsets[i].size(); j++)
+            {
+                if (current->dataOffsets[i][j] == oldOffset)
+                {
+                    current->dataOffsets[i][j] = newOffset; // Adresi direkt değiştir!
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+// Eski Adresi Ağaçtan Temizleme
+bool BPlusTree::removeOffset(string key, streampos oldOffset)
+{
+    BPlusNode *current = root;
+    while (!current->isLeafNode)
+    {
+        int i = 0;
+        while (i < current->keys.size() && key >= current->keys[i])
+            i++;
+        current = current->children[i];
+    }
+    for (int i = 0; i < current->keys.size(); i++)
+    {
+        if (current->keys[i] == key)
+        {
+            for (auto it = current->dataOffsets[i].begin(); it != current->dataOffsets[i].end(); ++it)
+            {
+                if (*it == oldOffset)
+                {
+                    current->dataOffsets[i].erase(it); // Çöp adresi sil!
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}

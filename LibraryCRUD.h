@@ -20,6 +20,9 @@ public:
 
     std::vector<std::streampos> searchAuthor(const std::string &author);
     std::vector<std::streampos> searchId(const std::string &id);
+    std::vector<std::streampos> searchCategory(const std::string &category);
+    std::vector<std::streampos> searchBookName(const std::string &bookName);
+    std::vector<std::streampos> searchDate(const std::string &date);
 
     bool deleteBook(std::fstream &dbFile, const std::string &id);
 
