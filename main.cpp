@@ -20,13 +20,14 @@ atomic<bool> isRunning(true); // Flag to stop the background process
 
 // ==============================================================================
 // DATABASE MAINTENANCE (VACUUM / HARD DELETE) FUNCTION
-// This function skips records marked with "Soft Delete" (*),
-// writes clean records to a new file, deletes the old file, and resets indexes.
 // ==============================================================================
-void vacuumDatabase(LibraryCRUD **dbPtr)
+void vacuumDatabase(LibraryCRUD **dbPtr, const string &filename)
 {
-    ifstream inFile("books_dataset.txt", ios::binary);
-    ofstream outFile("books_dataset_temp.txt", ios::binary);
+    ifstream inFile(filename, ios::binary);
+
+    // Gecici dosya ismini dinamik olarak belirliyoruz
+    string tempFilename = "temp_" + filename;
+    ofstream outFile(tempFilename, ios::binary);
 
     if (!inFile.is_open() || !outFile.is_open())
         return;
@@ -52,7 +53,7 @@ void vacuumDatabase(LibraryCRUD **dbPtr)
         // Write valid record to the new file (adding \n)
         outFile << line << "\n";
 
-        // Index to new trees instantly (Very fast!)
+        // Index to new trees instantly
         Book parsedBook = parseLine(line);
         if (parsedBook.isValid)
         {
@@ -64,9 +65,9 @@ void vacuumDatabase(LibraryCRUD **dbPtr)
     outFile.close();
 
     // 1. Delete the old file from disk (Hard Delete)
-    remove("books_dataset.txt");
+    remove(filename.c_str());
     // 2. Rename the new clean file to the original name
-    rename("books_dataset_temp.txt", "books_dataset.txt");
+    rename(tempFilename.c_str(), filename.c_str());
 
     // 3. Delete old B+ Trees from memory, attach the new one to the system
     delete *dbPtr;
@@ -78,7 +79,7 @@ void vacuumDatabase(LibraryCRUD **dbPtr)
 // ==============================================================================
 // BACKGROUND THREAD WORKER
 // ==============================================================================
-void autoVacuumWorker(LibraryCRUD **dbPtr, int intervalSeconds)
+void autoVacuumWorker(LibraryCRUD **dbPtr, int intervalSeconds, string filename)
 {
     while (isRunning)
     {
@@ -92,8 +93,8 @@ void autoVacuumWorker(LibraryCRUD **dbPtr, int intervalSeconds)
 
         // When the time is up, lock the system and perform cleanup
         lock_guard<mutex> lock(dbMutex);
-        cout << "\n\n*** [AUTO MAINTENANCE] Background Hard-Delete (Vacuum) process started... ***\n";
-        vacuumDatabase(dbPtr);
+        cout << "\n\n*** [AUTO MAINTENANCE] Background Hard-Delete (Vacuum) process started on " << filename << "... ***\n";
+        vacuumDatabase(dbPtr, filename);
         cout << ">>> Please re-enter your choice: ";
     }
 }
@@ -101,11 +102,15 @@ void autoVacuumWorker(LibraryCRUD **dbPtr, int intervalSeconds)
 // ==============================================================================
 // INITIAL LOAD FUNCTION
 // ==============================================================================
-void initialLoad(LibraryCRUD *db)
+void initialLoad(LibraryCRUD *db, const string &filename)
 {
-    ifstream file("books_dataset.txt", ios::binary);
+    ifstream file(filename, ios::binary);
     if (!file.is_open())
+    {
+        cout << "\n[KRITIK HATA] " << filename << " dosyasi bulunamadi!\n";
+        cout << "Lutfen dosyanin programla ayni klasorde oldugundan emin olun.\n\n";
         return;
+    }
 
     int processedRecords = 0;
     string line;
@@ -135,26 +140,63 @@ void initialLoad(LibraryCRUD *db)
 
 int main()
 {
-    LibraryCRUD *db = new LibraryCRUD();
-
     cout << "==========================================\n";
-    cout << "LIBRARY B+ TREE SYSTEM STARTING...\n";
+    cout << "    LIBRARY B+ TREE SYSTEM STARTING...\n";
+    cout << "==========================================\n";
+
+    // --- DATASET SEÇİM MENÜSÜ ---
+    string selectedFilename = "";
+    string dsChoice;
+
+    while (true)
+    {
+        cout << "Select Dataset to Load:\n";
+        cout << "[1] 10K Books Dataset\n";
+        cout << "[2] 100K Books Dataset\n";
+        cout << "[3] 1M Books Dataset\n";
+        cout << "Choice: ";
+        cin >> dsChoice;
+
+        if (dsChoice == "1")
+        {
+            selectedFilename = "10KBooks_dataset.txt";
+            break;
+        }
+        else if (dsChoice == "2")
+        {
+            selectedFilename = "100KBooks_dataset.txt";
+            break;
+        }
+        else if (dsChoice == "3")
+        {
+            selectedFilename = "1MBooks_dataset.txt";
+            break;
+        }
+        else
+        {
+            cout << "Invalid choice! Please enter 1, 2, or 3.\n\n";
+        }
+    }
+
+    cout << "\n[SYSTEM] Selected dataset: " << selectedFilename << "\n";
     cout << "Loading data into memory, please wait...\n";
 
+    LibraryCRUD *db = new LibraryCRUD();
+
     auto startIdx = high_resolution_clock::now();
-    initialLoad(db);
+    initialLoad(db, selectedFilename); // Dinamik dosya ismini fonksiyona gonderiyoruz
     auto endIdx = high_resolution_clock::now();
+
     cout << "Indexing Time: " << duration_cast<milliseconds>(endIdx - startIdx).count() << " ms\n";
     cout << "==========================================\n";
 
-    // Start background Vacuum worker (e.g., runs every 120 seconds)
-    thread vacuumThread(autoVacuumWorker, &db, 120);
+    // Start background Vacuum worker with the selected filename
+    thread vacuumThread(autoVacuumWorker, &db, 120, selectedFilename);
 
     string choice;
     while (true)
     {
-
-        cout << "Select process:";
+        cout << "\nSelect process:";
         cout << "\n[1] Search Book (Menu)\n[2] Update Record\n[3] Delete Book (Soft Delete)\n[4] Manual Vacuum (Hard Delete)\n[0] Exit\n";
         cout << "Choice: " << flush;
         cin >> choice;
@@ -184,6 +226,7 @@ int main()
             auto startSearch = high_resolution_clock::now();
             auto endSearch = high_resolution_clock::now();
             bool validSearch = true;
+
             if (searchChoice == "1")
             {
                 string id;
@@ -191,11 +234,11 @@ int main()
                 cin >> id;
 
                 lock_guard<mutex> lock(dbMutex);
-                vector<streampos> offsets = db->searchId(id);
-                if (!offsets.empty())
+                vector<streampos> idOffsets = db->searchId(id);
+                if (!idOffsets.empty())
                 {
-                    fstream file("books_dataset.txt", ios::in | ios::binary);
-                    file.seekg(offsets[0]);
+                    fstream file(selectedFilename, ios::in | ios::binary);
+                    file.seekg(idOffsets[0]);
                     string line;
                     getline(file, line);
                     if (line[0] != '*')
@@ -208,7 +251,7 @@ int main()
                     cout << "Not found.\n";
                 }
             }
-            else if (searchChoice == "1")
+            else if (searchChoice == "2")
             {
                 cout << "  Author Name: " << flush;
                 while (getline(cin, keyword) && keyword.empty())
@@ -218,7 +261,7 @@ int main()
                 offsets = db->searchAuthor(keyword);
                 endSearch = high_resolution_clock::now();
             }
-            else if (searchChoice == "2")
+            else if (searchChoice == "3")
             {
                 cout << "  Category Name: " << flush;
                 while (getline(cin, keyword) && keyword.empty())
@@ -228,7 +271,7 @@ int main()
                 offsets = db->searchCategory(keyword);
                 endSearch = high_resolution_clock::now();
             }
-            else if (searchChoice == "3")
+            else if (searchChoice == "4")
             {
                 cout << "  Book Name: " << flush;
                 while (getline(cin, keyword) && keyword.empty())
@@ -238,7 +281,7 @@ int main()
                 offsets = db->searchBookName(keyword);
                 endSearch = high_resolution_clock::now();
             }
-            else if (searchChoice == "4")
+            else if (searchChoice == "5")
             {
                 cout << "  Publication Year (e.g., 1998): " << flush;
                 while (getline(cin, keyword) && keyword.empty())
@@ -254,13 +297,12 @@ int main()
                 validSearch = false;
             }
 
-            // Eğer geçerli bir arama yapıldıysa sonuçları bastır (Kod tekrarından kurtulduk!)
-            if (validSearch)
+            if (validSearch && searchChoice != "1")
             {
                 cout << "\nFound Count: " << offsets.size() << " | Time: " << duration_cast<microseconds>(endSearch - startSearch).count() << " microseconds\n";
 
                 int limit = 0;
-                ifstream file("books_dataset.txt", ios::binary);
+                ifstream file(selectedFilename, ios::binary);
                 for (streampos off : offsets)
                 {
                     if (limit >= 5)
@@ -290,8 +332,7 @@ int main()
             vector<streampos> offsets = db->searchId(id);
             if (!offsets.empty())
             {
-                // HATA 1 ÇÖZÜMÜ: ios::out eklendi ki Update (Yazma) yapılabilsin!
-                fstream file("books_dataset.txt", ios::in | ios::out | ios::binary);
+                fstream file(selectedFilename, ios::in | ios::out | ios::binary);
 
                 file.seekg(offsets[0]);
                 string line;
@@ -302,7 +343,6 @@ int main()
                 {
                     Book tempBook;
 
-                    // HATA 2 ÇÖZÜMÜ: Orijinal ID'yi ve Geçerlilik Durumunu yeni objeye aktar
                     tempBook.id = id;
                     tempBook.isValid = true;
 
@@ -326,7 +366,6 @@ int main()
                     {
                     }
 
-                    // Artık dosya hem okumaya hem yazmaya açık, güncelleme başarıyla diske yazılacak
                     db->updateBook(file, id, tempBook);
                     cout << "Record successfully updated!\n";
                 }
@@ -343,7 +382,7 @@ int main()
             cin >> id;
 
             lock_guard<mutex> lock(dbMutex);
-            fstream file("books_dataset.txt", ios::in | ios::out | ios::binary);
+            fstream file(selectedFilename, ios::in | ios::out | ios::binary);
             if (db->deleteBook(file, id))
                 cout << "Book deleted successfully (Soft Delete).\n";
             else
@@ -351,10 +390,9 @@ int main()
         }
         else if (choice == "4")
         {
-            // User manually initiates Hard Delete
             lock_guard<mutex> lock(dbMutex);
             cout << "Manual Hard-Delete started...\n";
-            vacuumDatabase(&db);
+            vacuumDatabase(&db, selectedFilename); // Dinamik isim Vacuum'a da gonderildi
         }
         else
         {
@@ -362,7 +400,6 @@ int main()
         }
     }
 
-    // Wait for background worker and clean up memory on exit
     vacuumThread.join();
     delete db;
     cout << "System safely shut down.\n";
