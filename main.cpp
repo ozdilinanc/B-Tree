@@ -8,6 +8,14 @@
 #include <atomic>
 #include <cstdio> // For std::remove and std::rename
 
+// --- CROSS-PLATFORM RAM KÜTÜPHANELERİ ---
+#ifdef _WIN32
+#include <windows.h>
+#include <psapi.h>
+#elif __linux__
+#include <sys/resource.h>
+#endif
+
 #include "StringParser.h"
 #include "LibraryCRUD.h"
 
@@ -19,41 +27,55 @@ mutex dbMutex;                // Prevents simultaneous reading and vacuuming
 atomic<bool> isRunning(true); // Flag to stop the background process
 
 // ==============================================================================
+// CROSS-PLATFORM RAM ÖLÇÜM FONKSİYONU
+// ==============================================================================
+double getMemoryUsageMB()
+{
+#ifdef _WIN32
+    PROCESS_MEMORY_COUNTERS_EX pmc;
+    GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS *)&pmc, sizeof(pmc));
+    return (double)pmc.WorkingSetSize / (1024 * 1024);
+#elif __linux__
+    struct rusage usage;
+    getrusage(RUSAGE_SELF, &usage);
+    // Linux'ta maxrss kilobyte döner, MB için 1024'e böleriz.
+    return (double)usage.ru_maxrss / 1024.0;
+#else
+    return 0.0;
+#endif
+}
+
+// ==============================================================================
 // DATABASE MAINTENANCE (VACUUM / HARD DELETE) FUNCTION
 // ==============================================================================
 void vacuumDatabase(LibraryCRUD **dbPtr, const string &filename)
 {
     ifstream inFile(filename, ios::binary);
 
-    // Gecici dosya ismini dinamik olarak belirliyoruz
     string tempFilename = "temp_" + filename;
     ofstream outFile(tempFilename, ios::binary);
 
     if (!inFile.is_open() || !outFile.is_open())
         return;
 
-    // Creating fresh new trees
     LibraryCRUD *newDb = new LibraryCRUD();
     string line;
     int cleanedRecords = 0;
 
     while (true)
     {
-        streampos currentOffset = outFile.tellp(); // Byte address in the new file
+        streampos currentOffset = outFile.tellp();
         if (!getline(inFile, line))
             break;
 
-        // Skip without writing if the line is empty or starts with '*' (Deleted)
         if (line.empty() || line[0] == '*')
         {
             cleanedRecords++;
             continue;
         }
 
-        // Write valid record to the new file (adding \n)
         outFile << line << "\n";
 
-        // Index to new trees instantly
         Book parsedBook = parseLine(line);
         if (parsedBook.isValid)
         {
@@ -64,12 +86,9 @@ void vacuumDatabase(LibraryCRUD **dbPtr, const string &filename)
     inFile.close();
     outFile.close();
 
-    // 1. Delete the old file from disk (Hard Delete)
     remove(filename.c_str());
-    // 2. Rename the new clean file to the original name
     rename(tempFilename.c_str(), filename.c_str());
 
-    // 3. Delete old B+ Trees from memory, attach the new one to the system
     delete *dbPtr;
     *dbPtr = newDb;
 
@@ -83,7 +102,6 @@ void autoVacuumWorker(LibraryCRUD **dbPtr, int intervalSeconds, string filename)
 {
     while (isRunning)
     {
-        // Sleep for the specified seconds (frequently checking the stop flag)
         for (int i = 0; i < intervalSeconds; ++i)
         {
             if (!isRunning)
@@ -91,7 +109,6 @@ void autoVacuumWorker(LibraryCRUD **dbPtr, int intervalSeconds, string filename)
             this_thread::sleep_for(chrono::seconds(1));
         }
 
-        // When the time is up, lock the system and perform cleanup
         lock_guard<mutex> lock(dbMutex);
         cout << "\n\n*** [AUTO MAINTENANCE] Background Hard-Delete (Vacuum) process started on " << filename << "... ***\n";
         vacuumDatabase(dbPtr, filename);
@@ -129,7 +146,6 @@ void initialLoad(LibraryCRUD *db, const string &filename)
         }
         processedRecords++;
 
-        // Used endl to print to screen immediately
         if (processedRecords % 100000 == 0)
         {
             cout << " -> " << processedRecords << " records added to the tree..." << endl;
@@ -181,16 +197,19 @@ int main()
     cout << "\n[SYSTEM] Selected dataset: " << selectedFilename << "\n";
     cout << "Loading data into memory, please wait...\n";
 
+    double startRAM = getMemoryUsageMB();
     LibraryCRUD *db = new LibraryCRUD();
 
     auto startIdx = high_resolution_clock::now();
-    initialLoad(db, selectedFilename); // Dinamik dosya ismini fonksiyona gonderiyoruz
+    initialLoad(db, selectedFilename);
     auto endIdx = high_resolution_clock::now();
 
+    double endRAM = getMemoryUsageMB();
+
     cout << "Indexing Time: " << duration_cast<milliseconds>(endIdx - startIdx).count() << " ms\n";
+    cout << "Tree RAM Usage: " << (endRAM - startRAM) << " MB\n";
     cout << "==========================================\n";
 
-    // Start background Vacuum worker with the selected filename
     thread vacuumThread(autoVacuumWorker, &db, 120, selectedFilename);
 
     string choice;
@@ -203,7 +222,7 @@ int main()
 
         if (choice == "0")
         {
-            isRunning = false; // Stop the background thread
+            isRunning = false;
             break;
         }
         else if (choice == "1")
@@ -392,7 +411,7 @@ int main()
         {
             lock_guard<mutex> lock(dbMutex);
             cout << "Manual Hard-Delete started...\n";
-            vacuumDatabase(&db, selectedFilename); // Dinamik isim Vacuum'a da gonderildi
+            vacuumDatabase(&db, selectedFilename);
         }
         else
         {
